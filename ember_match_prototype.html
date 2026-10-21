@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ember Match — прототип</title>
+<style>
+:root{--bg:#1B1424;--panel:#2a2038;--gold:#E0A83A;--red:#8B1A1A;--txt:#F2E6D0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;display:flex;justify-content:center;padding:12px}
+#app{width:100%;max-width:420px}h1{font-size:20px;margin:4px 0 8px;color:var(--gold)}
+.hud{display:flex;justify-content:space-between;font-size:14px;margin:6px 0}
+.bar{height:14px;background:#000;border-radius:7px;overflow:hidden;margin-bottom:8px}.bar i{display:block;height:100%;background:linear-gradient(90deg,#b22,#e55);width:100%;transition:width .3s}
+#board{display:grid;gap:4px;background:var(--panel);padding:6px;border-radius:10px;touch-action:manipulation}
+.t{aspect-ratio:1;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:transform .15s,opacity .15s}
+.t.sel{border-color:#fff;transform:scale(1.08)}.t.pop{opacity:0;transform:scale(.3)}
+.c0{background:#E0553A}.c1{background:#E0A83A}.c2{background:#2E8B7A}.c3{background:#6A5ACD}.c4{background:#d6338a}
+#msg{min-height:22px;font-size:13px;margin:8px 0;color:var(--gold)}
+.ov{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;padding:16px}
+.ov.on{display:flex}.card{background:var(--panel);border:2px solid var(--gold);border-radius:12px;padding:16px;max-width:360px;text-align:center}
+button{background:var(--gold);color:#222;border:0;border-radius:8px;padding:10px 14px;margin:4px;font-weight:700;cursor:pointer;font-size:14px}
+small{opacity:.7}
+</style></head><body><div id="app">
+<h1>🔥 Ember Match</h1>
+<div class="hud"><span id="enemy">Ворог</span><span id="moves"></span></div>
+<div class="bar"><i id="hp"></i></div>
+<div id="board"></div>
+<div id="msg"></div>
+<small id="meta"></small>
+<div class="ov on" id="ov"><div class="card" id="card"></div></div>
+</div>
+<script>
+const N=7,K=5,ENEMIES=[{n:"Тінь",hp:30},{n:"Цербер",hp:55},{n:"Аїд",hp:90}];
+const BOONS=[{t:"🔥 Жар: +25% шкоди",f:s=>s.dmg*=1.25},{t:"➕ Вітер: +3 ходи на бій",f:s=>s.extra+=3},{t:"⛓ Каскади: множник комбо ×1.5",f:s=>s.chain+=0.25}];
+let shards=+(localStorage.getItem("em_shards")||0);
+let S,board,sel=null,busy=false;
+const $=id=>document.getElementById(id), sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function newRun(){S={fight:0,dmg:1,extra:Math.floor(shards/4),chain:0.5};startFight()}
+function startFight(){const e=ENEMIES[S.fight];S.hp=e.hp;S.max=e.hp;S.moves=12+S.extra;
+ do{board=Array.from({length:N*N},()=>Math.floor(Math.random()*K))}while(findMatches().size||!hasMove());
+ $("ov").classList.remove("on");render();msg("Свайпни сусідні кулі, щоб зібрати 3+.")}
+function msg(t){$("msg").textContent=t}
+function render(){const b=$("board");b.style.gridTemplateColumns=`repeat(${N},1fr)`;b.innerHTML="";
+ board.forEach((v,i)=>{const d=document.createElement("div");d.className="t c"+v+(sel===i?" sel":"");d.onclick=()=>click(i);b.appendChild(d)});
+ $("enemy").textContent=`${ENEMIES[S.fight].n} (${Math.max(0,Math.ceil(S.hp))} HP)`;$("moves").textContent=`Ходи: ${S.moves}`;
+ $("hp").style.width=Math.max(0,S.hp/S.max*100)+"%";$("meta").textContent=`Осколки: ${shards} · бонус ходів від вогнища: +${Math.floor(shards/4)}`}
+function adj(a,b){const ra=Math.floor(a/N),ca=a%N,rb=Math.floor(b/N),cb=b%N;return Math.abs(ra-rb)+Math.abs(ca-cb)===1}
+function findMatches(){const m=new Set();
+ for(let r=0;r<N;r++){let run=1;for(let c=1;c<=N;c++){if(c<N&&board[r*N+c]!==null&&board[r*N+c]===board[r*N+c-1])run++;else{if(run>=3)for(let k=1;k<=run;k++)m.add(r*N+c-k);run=1}}}
+ for(let c=0;c<N;c++){let run=1;for(let r=1;r<=N;r++){if(r<N&&board[r*N+c]!==null&&board[r*N+c]===board[(r-1)*N+c])run++;else{if(run>=3)for(let k=1;k<=run;k++)m.add((r-k)*N+c);run=1}}}
+ return m}
+function hasMove(){for(let i=0;i<N*N;i++)for(const j of[i+1,i+N]){if(j>=N*N||(j===i+1&&j%N===0))continue;
+ [board[i],board[j]]=[board[j],board[i]];const ok=findMatches().size>0;[board[i],board[j]]=[board[j],board[i]];if(ok)return true}return false}
+async function click(i){if(busy)return;
+ if(sel===null){sel=i;render();return}
+ if(sel===i){sel=null;render();return}
+ if(!adj(sel,i)){sel=i;render();return}
+ busy=true;const a=sel;sel=null;[board[a],board[i]]=[board[i],board[a]];
+ if(!findMatches().size){[board[a],board[i]]=[board[i],board[a]];render();msg("Немає збігу — хід не витрачено.");busy=false;return}
+ S.moves--;let chain=0,total=0;
+ while(true){const m=findMatches();if(!m.size)break;chain++;
+  const dmg=m.size*S.dmg*(1+S.chain*(chain-1));S.hp-=dmg;total+=dmg;
+  [...m].forEach(k=>{const el=$("board").children[k];if(el)el.classList.add("pop")});render2(m);await sleep(220);
+  m.forEach(k=>board[k]=null);
+  for(let c=0;c<N;c++){let col=[];for(let r=N-1;r>=0;r--)if(board[r*N+c]!==null)col.push(board[r*N+c]);
+   for(let r=N-1;r>=0;r--)board[r*N+c]=col.length?col.shift():Math.floor(Math.random()*K)}
+  render();await sleep(200)}
+ msg(chain>1?`Каскад ×${chain}! Шкода ${Math.round(total)}.`:`Шкода ${Math.round(total)}.`);
+ if(S.hp<=0){await sleep(250);win();busy=false;return}
+ if(S.moves<=0){await sleep(250);lose();busy=false;return}
+ if(!hasMove()){do{board.sort(()=>Math.random()-.5)}while(findMatches().size||!hasMove());msg("Поле перемішано.")}
+ render();busy=false}
+function render2(m){$("hp").style.width=Math.max(0,S.hp/S.max*100)+"%"}
+function show(h){$("card").innerHTML=h;$("ov").classList.add("on")}
+function win(){render();if(S.fight===ENEMIES.length-1){shards+=10;save();show(`<h2>🏆 Перемога над Аїдом!</h2><p>Ти пройшов забіг. +10 осколків.</p><button onclick="newRun()">Новий забіг</button>`);return}
+ const o=BOONS.slice().sort(()=>Math.random()-.5).slice(0,2);
+ show(`<h2>Ворога переможено</h2><p>Обери дар:</p>`+o.map((b,i)=>`<button onclick="pick(${BOONS.indexOf(b)})">${b.t}</button>`).join(""))}
+function pick(i){BOONS[i].f(S);S.fight++;startFight()}
+function lose(){const g=S.fight*2+2;shards+=g;save();
+ show(`<h2>Ходи закінчились</h2><p>Поразка — не штраф: +${g} осколків для вогнища. Кожні 4 осколки дають +1 хід на бій у наступних забігах.</p><button onclick="newRun()">Спробувати ще</button>`)}
+function save(){try{localStorage.setItem("em_shards",shards)}catch(e){}}
+show(`<h2>🔥 Ember Match</h2><p>Match-3 roguelike: переможи трьох ворогів за обмежену кількість ходів, обирай дари між боями. Поразка дає постійний прогрес.</p><button onclick="newRun()">Почати забіг</button>`);
+</script></body></html>
